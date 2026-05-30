@@ -4,11 +4,8 @@ yfinance
 pandas
 numpy
 ta
-transformers
-torch
 scikit-learn
 joblib
 lightgbm
 requests
-tf-keras
 pydantic

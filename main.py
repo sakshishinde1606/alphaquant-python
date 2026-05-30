@@ -20,12 +20,10 @@ from transformers import pipeline
 from contextlib import asynccontextmanager
 import asyncio
 
+# Replace the lifespan function with this simple version
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Runs on startup — preload FinBERT so first request isn't slow
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, get_finbert)
-    print("[Startup] FinBERT preloaded and ready.")
+    print("[Startup] Engine ready.")
     yield
     # Runs on shutdown — nothing to clean up
 
@@ -191,44 +189,33 @@ def get_finbert():
 
 def compute_finbert_score(news_text: str) -> float:
     """
-    Runs FinBERT on the news context string.
-    Returns a float from -1.0 (very negative) to +1.0 (very positive).
-    Chunks input to stay within FinBERT's 512 token limit (~400 chars per chunk).
-    Falls back to 0.0 on any failure.
+    Lightweight fallback — keyword-based sentiment when FinBERT unavailable.
+    Returns -1.0 to +1.0
     """
     if not news_text or not news_text.strip():
         return 0.0
 
-    try:
-        finbert = get_finbert()
-        chunks = [
-            news_text[i:i + 400]
-            for i in range(0, min(len(news_text), 2000), 400)
-        ]
+    text = news_text.lower()
 
-        chunk_scores = []
-        for chunk in chunks:
-            if not chunk.strip():
-                continue
-            results = finbert(chunk)[0]
-            score_map = {r["label"].lower(): r["score"] for r in results}
-            scalar = (
-                score_map.get("positive", 0.0) * 1.0
-                + score_map.get("neutral", 0.0) * 0.0
-                + score_map.get("negative", 0.0) * -1.0
-            )
-            chunk_scores.append(scalar)
+    positive_words = [
+        "surge", "rally", "gain", "growth", "beat", "strong", "bullish",
+        "upgrade", "record", "profit", "revenue", "outperform", "buy",
+        "positive", "rise", "boost", "high", "up", "soar", "jump"
+    ]
+    negative_words = [
+        "fall", "drop", "decline", "loss", "miss", "weak", "bearish",
+        "downgrade", "sell", "negative", "crash", "low", "down", "plunge",
+        "cut", "risk", "concern", "fear", "recession", "layoff"
+    ]
 
-        if not chunk_scores:
-            return 0.0
+    pos = sum(1 for w in positive_words if w in text)
+    neg = sum(1 for w in negative_words if w in text)
+    total = pos + neg
 
-        return round(sum(chunk_scores) / len(chunk_scores), 4)
-
-    except Exception as e:
-        print(f"[FinBERT] Inference failed: {e}")
+    if total == 0:
         return 0.0
 
-
+    return round((pos - neg) / total, 4)
 # =============================================================================
 # MACRO ENGINE
 # =============================================================================
