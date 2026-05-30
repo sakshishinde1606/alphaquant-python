@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from ta.momentum import RSIIndicator
 from ta.trend import MACD
 from ta.volatility import BollingerBands, AverageTrueRange
-from transformers import pipeline
 
 from contextlib import asynccontextmanager
 import asyncio
@@ -102,41 +101,10 @@ def get_options_put_call_ratio() -> dict:
 _finbert = None
 _finbert_lock = threading.Lock()
 
-import torch
-import torch.nn as nn
 
-class LSTMClassifier(nn.Module):
-    def __init__(self, input_size=4, hidden_size=64, num_layers=2, num_classes=5):
-        super().__init__()
-        self.lstm = nn.LSTM(
-            input_size, hidden_size, num_layers,
-            batch_first=True, dropout=0.2
-        )
-        self.fc = nn.Linear(hidden_size, num_classes)
 
-    def forward(self, x):
-        out, _ = self.lstm(x)
-        return self.fc(out[:, -1, :])
-
-LSTM_SEQUENCE_LENGTH = 20
-LSTM_PATTERN_LABELS = {
-    0: "BEARISH_BREAKDOWN",
-    1: "BEARISH_CONSOLIDATION",
-    2: "NEUTRAL_CONTINUATION",
-    3: "BULLISH_CONSOLIDATION",
-    4: "BULLISH_BREAKOUT"
-}
-
-try:
-    lstm_model = LSTMClassifier()
-    lstm_model.load_state_dict(torch.load("lstm_model.pth", map_location="cpu"))
-    lstm_model.eval()
-    lstm_scaler = joblib.load("lstm_scaler.pkl")
-    print("[LSTM] Model loaded successfully.")
-except Exception as e:
-    print(f"[LSTM] Model not found — run train_lstm.py first. {e}")
-    lstm_model = None
-    lstm_scaler = None
+lstm_model = None
+print("[LSTM] Disabled on free tier.")
 # =============================================================================
 # REQUEST SCHEMA
 # =============================================================================
@@ -377,43 +345,7 @@ def compute_anomaly_flag(df: pd.DataFrame) -> bool:
 
 
 def compute_lstm_pattern(df: pd.DataFrame) -> str:
-    """
-    LSTM sequence classifier on last 20 candles of OHLCV data.
-    Returns one of 5 pattern labels based on trained sequence recognition.
-    Falls back to NEUTRAL_CONTINUATION if model not loaded.
-    """
-    if lstm_model is None or lstm_scaler is None:
-        return "NEUTRAL_CONTINUATION"
-
-    try:
-        df = df.copy()
-        df["ret"] = df["close"].pct_change()
-        df["hl_range"] = (df["high"] - df["low"]) / df["close"]
-        df["co_range"] = (df["close"] - df["open"]) / df["open"]
-        df["vol_ratio"] = df["volume"] / df["volume"].rolling(20).mean()
-
-        feature_cols = ["ret", "hl_range", "co_range", "vol_ratio"]
-        df = df[feature_cols].dropna()
-
-        if len(df) < LSTM_SEQUENCE_LENGTH:
-            return "NEUTRAL_CONTINUATION"
-
-        # Take last 20 candles
-        sequence = df[feature_cols].iloc[-LSTM_SEQUENCE_LENGTH:].values
-
-        # Scale using training scaler
-        scaled = lstm_scaler.transform(sequence)
-        tensor = torch.FloatTensor(scaled).unsqueeze(0)  # shape: (1, 20, 4)
-
-        with torch.no_grad():
-            output = lstm_model(tensor)
-            predicted_class = int(torch.argmax(output, dim=1).item())
-
-        return LSTM_PATTERN_LABELS.get(predicted_class, "NEUTRAL_CONTINUATION")
-
-    except Exception as e:
-        print(f"[LSTM] Inference failed: {e}")
-        return "NEUTRAL_CONTINUATION"
+    return "NEUTRAL_CONTINUATION"
 
 def compute_feature_importance(
     rsi: float,
