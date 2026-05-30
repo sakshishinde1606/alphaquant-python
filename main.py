@@ -1,5 +1,7 @@
 import os
 os.environ["HF_HOME"] = "D:/huggingface_cache"
+import joblib
+import numpy as np
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,8 +17,23 @@ from ta.trend import MACD
 from ta.volatility import BollingerBands, AverageTrueRange
 from transformers import pipeline
 
-app = FastAPI(title="AlphaQuant Advanced Macro Engine", version="3.0.0")
+from contextlib import asynccontextmanager
+import asyncio
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Runs on startup — preload FinBERT so first request isn't slow
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, get_finbert)
+    print("[Startup] FinBERT preloaded and ready.")
+    yield
+    # Runs on shutdown — nothing to clean up
+
+app = FastAPI(
+    title="AlphaQuant Advanced Macro Engine",
+    version="3.0.0",
+    lifespan=lifespan
+)
 # --- CORS ---
 ALLOWED_ORIGINS = [
     "http://localhost:3000",
@@ -125,8 +142,6 @@ except Exception as e:
 # =============================================================================
 # REQUEST SCHEMA
 # =============================================================================
-import joblib
-import numpy as np
 
 # Load LightGBM at startup
 try:
@@ -673,3 +688,4 @@ async def analyze_asset(body: AnalyzeRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Engine failure: {str(e)}")
+    
